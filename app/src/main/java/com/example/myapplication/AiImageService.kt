@@ -31,16 +31,16 @@ object AiImageService {
     // 请从阿里云 DashScope 控制台获取 API Key：https://dashscope.console.aliyun.com/
     // 如果提供的是 AccessKey ID，需要先转换为 API Key 或使用签名方式
     // 请替换为您的实际密钥
-    private const val ACCESS_KEY_ID = "YOUR_ACCESS_KEY_ID"
-    private const val ACCESS_KEY_SECRET = "YOUR_ACCESS_KEY_SECRET"
+    // private const val ACCESS_KEY_ID = "YOUR_ACCESS_KEY_ID" // DashScope API Key 认证方式下不再需要
+    // private const val ACCESS_KEY_SECRET = "YOUR_ACCESS_KEY_SECRET" // DashScope API Key 认证方式下不再需要
     
     // DashScope API Key（从 DashScope 控制台获取）
     // 请替换为您的实际 API Key
-    private const val DASHSCOPE_API_KEY = "YOUR_DASHSCOPE_API_KEY"
+    private const val DASHSCOPE_API_KEY = "xxxx"
     
     // DashScope API 端点（多模态对话 API，用于图像编辑）
     // 根据 Python SDK：dashscope.base_http_api_url = 'https://dashscope.aliyuncs.com/api/v1'
-    // MultiModalConversation.call 使用的端点应该是：
+    // MultiModalConversation.call 使用的端点是 conversation
     private const val API_ENDPOINT = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     
     // 注意：如果上面的端点不行，可能需要检查 Python SDK 实际使用的完整端点路径
@@ -49,7 +49,11 @@ object AiImageService {
     // 注意：qwen-image-edit 支持文本指令，而 qwen-image-edit-plus 可能不支持
     private const val MODEL = "qwen-image-edit"
     
-    private val client = OkHttpClient()
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
     
     // 时区格式
     private val dateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
@@ -112,7 +116,7 @@ object AiImageService {
                 return@withContext Result.failure(Exception(errorMsg))
             }
             
-            // 5. 解析响应中的图片 Base64
+            // 5. 解析响应，下载并解码图片
             val resultBitmap = parseResponseToBitmap(responseBody ?: "")
             
             if (resultBitmap != null) {
@@ -196,16 +200,26 @@ object AiImageService {
         android.util.Log.d("AiImageService", "Messages 数组长度: ${messagesArray.length()}")
         android.util.Log.d("AiImageService", "Content 数组长度: ${contentArray.length()}")
         
-        // 构建完整的请求体（根据 Python SDK）
-        val json = JSONObject().apply {
-            put("model", MODEL)
-            put("messages", messagesArray)
+        // 构建 input 对象
+        val inputObj = JSONObject()
+        inputObj.put("messages", messagesArray)
+
+        // 构建 parameters 对象
+        val paramsObj = JSONObject().apply {
+            // qwen-image-edit 模型只输出一张图，所以 n=1
+            put("n", 1)
+            put("negative_prompt", "")
+            // 根据 curl 示例，这些参数也放在 parameters 中
             put("result_format", "message")
             put("stream", false)
-            // 注意：Python 示例中没有 n 参数，可能不需要
-            // put("n", 1)
             put("watermark", true)
-            put("negative_prompt", "")
+        }
+
+        // 构建最终的请求体 JSON
+        val json = JSONObject().apply {
+            put("model", MODEL)
+            put("input", inputObj)
+            put("parameters", paramsObj)
         }
         
         val jsonString = json.toString()
@@ -278,65 +292,21 @@ object AiImageService {
             .post(requestBody)
             .addHeader("Content-Type", "application/json")
         
-        // 确定使用哪个 API Key
-        val apiKey = if (DASHSCOPE_API_KEY.isNotEmpty()) {
-            DASHSCOPE_API_KEY
-        } else {
-            ACCESS_KEY_ID
-        }
-        
         // DashScope API 使用 Authorization: Bearer {API_KEY} 格式
         // 根据 Python SDK 和官方文档，应该使用 Bearer 认证
-        builder.addHeader("Authorization", "Bearer $apiKey")
+        builder.addHeader("Authorization", "Bearer $DASHSCOPE_API_KEY")
         
         // 添加调试信息（可以在 Logcat 中查看）
         android.util.Log.d("AiImageService", "=== API 请求信息 ===")
         android.util.Log.d("AiImageService", "端点: $API_ENDPOINT")
         android.util.Log.d("AiImageService", "模型: $MODEL")
-        android.util.Log.d("AiImageService", "API Key: ${apiKey.take(15)}...")
+        android.util.Log.d("AiImageService", "API Key: ${DASHSCOPE_API_KEY.take(15)}...")
         android.util.Log.d("AiImageService", "请求体: ${requestBodyJson.take(200)}...")
         
         return builder.build()
     }
     
-    /**
-     * 计算阿里云 API 签名
-     * 参考：https://help.aliyun.com/document_detail/315526.html
-     */
-    private fun calculateSignature(timestamp: String, requestBodyJson: String): String {
-        try {
-            // 1. 构建规范请求字符串
-            val canonicalRequest = buildCanonicalRequest(timestamp, requestBodyJson)
-            
-            // 2. 计算签名
-            val mac = Mac.getInstance("HmacSHA1")
-            val secretKey = SecretKeySpec(ACCESS_KEY_SECRET.toByteArray(), "HmacSHA1")
-            mac.init(secretKey)
-            val signatureBytes = mac.doFinal(canonicalRequest.toByteArray())
-            
-            // 3. Base64 编码
-            return AndroidBase64.encodeToString(signatureBytes, AndroidBase64.NO_WRAP)
-        } catch (e: Exception) {
-            e.printStackTrace()
-            return ""
-        }
-    }
-    
-    /**
-     * 构建规范请求字符串（用于签名）
-     */
-    private fun buildCanonicalRequest(timestamp: String, requestBodyJson: String): String {
-        // 构建规范请求字符串
-        val canonicalString = StringBuilder()
-        canonicalString.append("POST\n")  // HTTP Method
-        canonicalString.append("/api/v1/services/aigc/image-generation/generation\n")  // URI
-        canonicalString.append("timestamp=$timestamp\n")  // Query String
-        canonicalString.append("content-type:application/json\n")  // Headers
-        canonicalString.append("\n")  // 空行
-        canonicalString.append(requestBodyJson)  // Body
-        
-        return canonicalString.toString()
-    }
+
     
     /**
      * 解析 API 响应，提取图片 Base64 并转换为 Bitmap
@@ -357,11 +327,20 @@ object AiImageService {
      *   }
      * }
      */
-    private fun parseResponseToBitmap(responseBody: String): Bitmap? {
+    private suspend fun parseResponseToBitmap(responseBody: String): Bitmap? {
         return try {
             val json = JSONObject(responseBody)
             android.util.Log.d("AiImageService", "解析响应: ${json.toString().take(1000)}")
             
+            // 检查响应是否为错误信息
+            if (json.has("code") && json.has("message")) {
+                val errorCode = json.getString("code")
+                val errorMsg = json.getString("message")
+                android.util.Log.e("AiImageService", "API 返回错误: [$errorCode] $errorMsg")
+                // 可以抛出特定异常，让调用处捕获
+                throw Exception("API Error: $errorMsg")
+            }
+
             val output = json.optJSONObject("output")
             if (output != null) {
                 // 尝试解析 choices 数组（MultiModalConversation 格式）
@@ -375,20 +354,29 @@ object AiImageService {
                             // 查找图片内容
                             for (i in 0 until content.length()) {
                                 val item = content.getJSONObject(i)
-                                val imageBase64 = item.optString("image", "")
-                                val imageUrl = item.optString("url", "")
-                                
-                                if (imageBase64.isNotEmpty()) {
-                                    // 处理 Base64 字符串（可能包含 data URI 前缀）
-                                    val base64Data = imageBase64.removePrefix("data:image/jpeg;base64,")
-                                        .removePrefix("data:image/png;base64,")
-                                        .removePrefix("data:image/webp;base64,")
-                                    val imageBytes = AndroidBase64.decode(base64Data, AndroidBase64.NO_WRAP)
-                                    return android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-                                } else if (imageUrl.isNotEmpty()) {
-                                    // TODO: 如果返回的是 URL，需要再次下载图片
-                                    android.util.Log.w("AiImageService", "返回的是图片 URL，需要下载: $imageUrl")
-                                    return null
+                                // 根据最新文档，'image' 和 'url' 字段都可能包含图片URL
+                                val imageUrl = item.optString("image", "").ifEmpty { item.optString("url", "") }
+
+                                if (imageUrl.isNotEmpty()) {
+                                    android.util.Log.d("AiImageService", "获取到图片URL，开始下载: $imageUrl")
+                                    // 下载图片并解码为 Bitmap
+                                    return try {
+                                        val request = Request.Builder().url(imageUrl).build()
+                                        val response = client.newCall(request).execute()
+                                        if (!response.isSuccessful) {
+                                            android.util.Log.e("AiImageService", "下载图片失败: ${response.code}")
+                                            return null
+                                        }
+                                        val imageBytes = response.body?.bytes()
+                                        if (imageBytes != null) {
+                                            android.graphics.BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                                        } else {
+                                            null
+                                        }
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("AiImageService", "下载或解码图片时出错", e)
+                                        null
+                                    }
                                 }
                             }
                         }
