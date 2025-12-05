@@ -29,6 +29,7 @@ class MainActivity : ComponentActivity() {
     private var selectedImageUri by mutableStateOf<Uri?>(null)
     private var selectedBottomNav by mutableStateOf(0) // 0: 修图, 1: AI修图, 2: 我的
     private var hasReadImagesPermission by mutableStateOf(false)
+    private var hasReadVideosPermission by mutableStateOf(false)
     private var showImageSearch by mutableStateOf(false)
     
     // AI修图页面专用的图片URI（与普通修图页面分开管理）
@@ -36,6 +37,16 @@ class MainActivity : ComponentActivity() {
     private var aiShowImageSearch by mutableStateOf(false)
 
     private val pickImageLauncher =
+        registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
+            when (selectedBottomNav) {
+                0 -> selectedImageUri = uri
+                1 -> aiSelectedImageUri = uri
+                else -> {}
+            }
+        }
+    
+    // 支持选择视频文件
+    private val pickMediaLauncher =
         registerForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
             when (selectedBottomNav) {
                 0 -> selectedImageUri = uri
@@ -55,18 +66,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    
+    private val readVideosPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            hasReadVideosPermission = granted
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // 初始化读取图片权限状态
-        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        // 初始化读取媒体权限状态
+        val imagePermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             Manifest.permission.READ_MEDIA_IMAGES
         } else {
             Manifest.permission.READ_EXTERNAL_STORAGE
         }
+        val videoPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Manifest.permission.READ_MEDIA_VIDEO
+        } else {
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        }
         hasReadImagesPermission =
-            ContextCompat.checkSelfPermission(this, permission) == PermissionChecker.PERMISSION_GRANTED
+            ContextCompat.checkSelfPermission(this, imagePermission) == PermissionChecker.PERMISSION_GRANTED
+        hasReadVideosPermission =
+            ContextCompat.checkSelfPermission(this, videoPermission) == PermissionChecker.PERMISSION_GRANTED
 
         enableEdgeToEdge()
         setContent {
@@ -100,9 +123,14 @@ class MainActivity : ComponentActivity() {
                             when (selectedBottomNav) {
                                 0 -> ImageEditorScreen(
                                     selectedImageUri = selectedImageUri,
-                                    onSelectImage = { pickImageLauncher.launch("image/*") },
+                                    onSelectImage = { pickMediaLauncher.launch("*/*") }, // 支持图片和视频
                                     showImageSearch = showImageSearch,
                                     onOpenImageSearch = {
+                                        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            Manifest.permission.READ_MEDIA_IMAGES
+                                        } else {
+                                            Manifest.permission.READ_EXTERNAL_STORAGE
+                                        }
                                         if (hasReadImagesPermission) {
                                             showImageSearch = true
                                         } else {
@@ -120,9 +148,14 @@ class MainActivity : ComponentActivity() {
                                     onSelectImage = { pickImageLauncher.launch("image/*") },
                                     showImageSearch = aiShowImageSearch,
                                     onOpenImageSearch = {
+                                        val permission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                            Manifest.permission.READ_MEDIA_IMAGES
+                                        } else {
+                                            Manifest.permission.READ_EXTERNAL_STORAGE
+                                        }
                                         if (hasReadImagesPermission) {
                                             aiShowImageSearch = true
-        } else {
+                                        } else {
                                             readImagesPermissionLauncher.launch(permission)
                                         }
                                     },

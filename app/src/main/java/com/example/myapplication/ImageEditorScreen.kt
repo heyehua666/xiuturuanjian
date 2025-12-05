@@ -169,57 +169,73 @@ fun ImageEditorScreen(
                 contentAlignment = Alignment.Center
             ) {
                 if (selectedImageUri != null) {
-                    val imageModifier = Modifier
-                        .fillMaxSize()
-                        .clip(RoundedCornerShape(24.dp))
-                        .pointerInput(Unit) {
-                            detectTransformGestures { _, pan, zoom, _ ->
-                                // 只有真的发生平移或缩放时才记录历史
-                                if (pan != Offset.Zero || zoom != 1f) {
-                                    // 在这一次“步骤”生效前先记录当前状态，形成一个撤销节点
-                                    pushHistorySnapshot()
-                                    scale = (scale * zoom).coerceIn(0.5f, 5f)
-                                    offsetX += pan.x
-                                    offsetY += pan.y
+                    // 判断是图片还是视频
+                    val mediaType = selectedImageUri.getMediaType(context)
+                    
+                    if (mediaType == MediaType.VIDEO) {
+                        // 视频预览模式
+                        VideoPlayerView(
+                            videoUri = selectedImageUri,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(24.dp)),
+                            autoPlay = true,
+                            looping = true
+                        )
+                    } else {
+                        // 图片编辑模式
+                        val imageModifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(24.dp))
+                            .pointerInput(Unit) {
+                                detectTransformGestures { _, pan, zoom, _ ->
+                                    // 只有真的发生平移或缩放时才记录历史
+                                    if (pan != Offset.Zero || zoom != 1f) {
+                                        // 在这一次"步骤"生效前先记录当前状态，形成一个撤销节点
+                                        pushHistorySnapshot()
+                                        scale = (scale * zoom).coerceIn(0.5f, 5f)
+                                        offsetX += pan.x
+                                        offsetY += pan.y
+                                    }
                                 }
                             }
-                        }
 
-                    Box(
-                        modifier = imageModifier
-                    ) {
-                        OpenGLImageCanvas(
-                            imageUri = selectedImageUri,
-                            rotation = rotation,
-                            scale = scale,
-                            offsetX = offsetX,
-                            offsetY = offsetY,
-                            filter = currentFilter,
-                            modifier = Modifier.fillMaxSize()
-                        )
-
-                        // 渐变遮罩，增加金属高光质感
                         Box(
-                            modifier = Modifier
-                                .matchParentSize()
-                                .background(
-                                    brush = Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color.White.copy(alpha = 0.08f),
-                                            Color.Transparent,
-                                            Color(0xFF66CCFF).copy(alpha = 0.2f)
+                            modifier = imageModifier
+                        ) {
+                            OpenGLImageCanvas(
+                                imageUri = selectedImageUri,
+                                rotation = rotation,
+                                scale = scale,
+                                offsetX = offsetX,
+                                offsetY = offsetY,
+                                filter = currentFilter,
+                                modifier = Modifier.fillMaxSize()
+                            )
+
+                            // 渐变遮罩，增加金属高光质感
+                            Box(
+                                modifier = Modifier
+                                    .matchParentSize()
+                                    .background(
+                                        brush = Brush.verticalGradient(
+                                            colors = listOf(
+                                                Color.White.copy(alpha = 0.08f),
+                                                Color.Transparent,
+                                                Color(0xFF66CCFF).copy(alpha = 0.2f)
+                                            )
                                         )
                                     )
-                                )
-                        )
-
-                        // 裁剪框
-                        if (showCropMode) {
-                            CropOverlay(
-                                cropRect = cropRect,
-                                onCropRectChange = { cropRect = it },
-                                onCropInteractionStart = { pushHistorySnapshot() }
                             )
+
+                            // 裁剪框
+                            if (showCropMode) {
+                                CropOverlay(
+                                    cropRect = cropRect,
+                                    onCropRectChange = { cropRect = it },
+                                    onCropInteractionStart = { pushHistorySnapshot() }
+                                )
+                            }
                         }
                     }
                 } else {
@@ -234,7 +250,7 @@ fun ImageEditorScreen(
                             modifier = Modifier.size(40.dp)
                         )
                         Text(
-                            text = "从相册选择一张图片作为画布",
+                            text = "从相册选择图片或视频",
                             fontSize = 14.sp,
                             color = Color(0xFFCFD8DC)
                         )
@@ -260,81 +276,85 @@ fun ImageEditorScreen(
         }
 
         // 工具栏：裁剪 / 旋转 / 撤销 / 滤镜（炫酷渐变按钮）
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            GradientToolButton(
-                modifier = Modifier.weight(1f),
-                text = "裁剪",
-                icon = Icons.Default.Palette,
-                enabled = selectedImageUri != null
+        // 只在选择图片时显示编辑工具，视频只预览
+        val isVideo = selectedImageUri?.getMediaType(context) == MediaType.VIDEO
+        if (!isVideo) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                if (selectedImageUri != null) {
-                    showCropMode = !showCropMode
-                    showFilters = false
+                GradientToolButton(
+                    modifier = Modifier.weight(1f),
+                    text = "裁剪",
+                    icon = Icons.Default.Palette,
+                    enabled = selectedImageUri != null
+                ) {
+                    if (selectedImageUri != null) {
+                        showCropMode = !showCropMode
+                        showFilters = false
+                    }
+                }
+
+                GradientToolButton(
+                    modifier = Modifier.weight(1f),
+                    text = "旋转",
+                    icon = Icons.Default.Palette,
+                    enabled = selectedImageUri != null
+                ) {
+                    if (selectedImageUri != null) {
+                        pushHistorySnapshot()
+                        rotation = (rotation + 90f) % 360f
+                        showCropMode = false
+                        showFilters = false
+                    }
+                }
+
+                GradientToolButton(
+                    modifier = Modifier.weight(1f),
+                    text = "滤镜",
+                    icon = Icons.Default.Palette,
+                    enabled = selectedImageUri != null
+                ) {
+                    if (selectedImageUri != null) {
+                        showFilters = !showFilters
+                        showCropMode = false
+                    }
+                }
+
+                GradientToolButton(
+                    modifier = Modifier.weight(1f),
+                    text = "撤销",
+                    icon = Icons.Default.Palette,
+                    enabled = history.isNotEmpty()
+                ) {
+                    undo()
                 }
             }
 
-            GradientToolButton(
-                modifier = Modifier.weight(1f),
-                text = "旋转",
-                icon = Icons.Default.Palette,
-                enabled = selectedImageUri != null
-            ) {
-                if (selectedImageUri != null) {
-                    pushHistorySnapshot()
-                    rotation = (rotation + 90f) % 360f
-                    showCropMode = false
-                    showFilters = false
-                }
-            }
-
-            GradientToolButton(
-                modifier = Modifier.weight(1f),
-                text = "滤镜",
-                icon = Icons.Default.Palette,
-                enabled = selectedImageUri != null
-            ) {
-                if (selectedImageUri != null) {
-                    showFilters = !showFilters
-                    showCropMode = false
-                }
-            }
-
-            GradientToolButton(
-                modifier = Modifier.weight(1f),
-                text = "撤销",
-                icon = Icons.Default.Palette,
-                enabled = history.isNotEmpty()
-            ) {
-                undo()
-            }
-        }
-
-        // 保存按钮
-        if (selectedImageUri != null) {
-            GradientToolButton(
-                modifier = Modifier.fillMaxWidth(),
-                text = "保存图片",
-                icon = Icons.Default.Save,
-                enabled = true
-            ) {
-                scope.launch {
-                    saveImageToGallery(
-                        context = context,
-                        imageUri = selectedImageUri,
-                        rotation = rotation,
-                        scale = scale,
-                        offsetX = offsetX,
-                        offsetY = offsetY,
-                        filter = currentFilter,
-                        cropRect = if (showCropMode && cropRect.width > 0f) cropRect else null,
-                        canvasSize = canvasSize
-                    )
+            // 保存按钮（仅图片）
+            if (selectedImageUri != null) {
+                GradientToolButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    text = "保存图片",
+                    icon = Icons.Default.Save,
+                    enabled = true
+                ) {
+                    scope.launch {
+                        saveImageToGallery(
+                            context = context,
+                            imageUri = selectedImageUri,
+                            rotation = rotation,
+                            scale = scale,
+                            offsetX = offsetX,
+                            offsetY = offsetY,
+                            filter = currentFilter,
+                            cropRect = if (showCropMode && cropRect.width > 0f) cropRect else null,
+                            canvasSize = canvasSize
+                        )
+                    }
                 }
             }
         }

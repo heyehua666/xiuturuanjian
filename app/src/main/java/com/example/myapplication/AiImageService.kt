@@ -36,7 +36,7 @@ object AiImageService {
     
     // DashScope API Key（从 DashScope 控制台获取）
     // 请替换为您的实际 API Key
-    private const val DASHSCOPE_API_KEY = "xxxx"
+    private const val DASHSCOPE_API_KEY = "sk-3e82d55354894c47975ad98676d32d4f"
     
     // DashScope API 端点（多模态对话 API，用于图像编辑）
     // 根据 Python SDK：dashscope.base_http_api_url = 'https://dashscope.aliyuncs.com/api/v1'
