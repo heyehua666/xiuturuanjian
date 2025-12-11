@@ -52,6 +52,9 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation("androidx.compose.material:material-icons-extended:1.7.5")
     implementation("io.coil-kt:coil-compose:2.6.0")
+    // ExoPlayer (AndroidX Media3)
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
     // OkHttp for AI image editing API calls
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     testImplementation(libs.junit)
