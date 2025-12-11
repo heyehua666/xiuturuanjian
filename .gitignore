@@ -10,15 +10,15 @@
 *.dex
 
 # Built-in Android Studio files
-.gradle
+
 /build/
 /captures/
-.idea/
+
 *.iml
 local.properties
 
 # Gradle files
-.gradle/
+
 gradlew
 gradlew.bat
 
